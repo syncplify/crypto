@@ -1,10 +1,10 @@
 package ssh
 
-import (
-	minioSha256 "github.com/minio/sha256-simd"
-)
+import cryptoSha256 "crypto/sha256"
 
 var (
-	sha256SimdNew    = minioSha256.New
-	sha256SimdSum256 = minioSha256.Sum256
+	sha256SimdNew    = cryptoSha256.New
+	sha256SimdSum256 = cryptoSha256.Sum256
+	// sha256SimdNew    = minioSha256.New
+	// sha256SimdSum256 = minioSha256.Sum256
 )
