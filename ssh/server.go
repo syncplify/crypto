@@ -99,6 +99,15 @@ type ServerConfig struct {
 	// unknown.
 	KeyboardInteractiveCallback func(conn ConnMetadata, client KeyboardInteractiveChallenge) (*Permissions, error)
 
+	// NextAuthMethodsCallback, if not-nil, is called when another
+	// authentication callback returns ErrNeedMoreAuth or if, after an
+	// initial partial success, an authentication step fails.
+	// This callback must return the list of authentications methods
+	// that can be performed next.
+	// An empty list means no supported methods remain and so the
+	// multi-step authentication will fail
+	NextAuthMethodsCallback func(conn ConnMetadata) []string
+
 	// AuthLogCallback, if non-nil, is called to log all authentication
 	// attempts.
 	AuthLogCallback func(conn ConnMetadata, method string, err error)
@@ -395,6 +404,11 @@ func (l ServerAuthError) Error() string {
 // It is returned in ServerAuthError.Errors from NewServerConn.
 var ErrNoAuth = errors.New("ssh: no auth passed yet")
 
+// ErrNeedMoreAuth defines the error value that authentication
+// callbacks must return for multi-step authentication when a
+// specific authentication step succeed
+var ErrNeedMoreAuth = errors.New("ssh: at least one more authentication phase needed")
+
 func (s *connection) serverAuthenticate(config *ServerConfig) (*Permissions, error) {
 	sessionID := s.transport.getSessionID()
 	var cache pubKeyCache
@@ -433,6 +447,9 @@ userAuthLoop:
 			return nil, errors.New("ssh: client attempted to negotiate for unknown service: " + userAuthReq.Service)
 		}
 
+		if s.user != userAuthReq.User {
+			s.pastSuccessfulAuths = nil
+		}
 		s.user = userAuthReq.User
 
 		if !displayedBanner && config.BannerCallback != nil {
@@ -521,10 +538,16 @@ userAuthLoop:
 				candidate.user = s.user
 				candidate.pubKeyData = pubKeyData
 				candidate.perms, candidate.result = config.PublicKeyCallback(s, pubKey)
-				if candidate.result == nil && candidate.perms != nil && candidate.perms.CriticalOptions != nil && candidate.perms.CriticalOptions[sourceAddressCriticalOption] != "" {
-					candidate.result = checkSourceAddress(
+				// If PublicKeyCallback returns ErrNeedMoreAuth we need to check source address
+				// and update the returned error if this check fails
+				if (candidate.result == nil || candidate.result == ErrNeedMoreAuth) && candidate.perms != nil && candidate.perms.CriticalOptions != nil && candidate.perms.CriticalOptions[sourceAddressCriticalOption] != "" {
+					err = checkSourceAddress(
 						s.RemoteAddr(),
 						candidate.perms.CriticalOptions[sourceAddressCriticalOption])
+					// We need to update candidate.result only if the source address check fails
+					if err != nil {
+						candidate.result = err
+					}
 				}
 				cache.add(candidate)
 			}
@@ -537,7 +560,8 @@ userAuthLoop:
 					return nil, parseError(msgUserAuthRequest)
 				}
 
-				if candidate.result == nil {
+				// a public key is ok if result is nil or needs more auth phases
+				if candidate.result == nil || candidate.result == ErrNeedMoreAuth {
 					okMsg := userAuthPubKeyOkMsg{
 						Algo:   algo,
 						PubKey: pubKeyData,
@@ -647,6 +671,30 @@ userAuthLoop:
 		if config.GSSAPIWithMICConfig != nil && config.GSSAPIWithMICConfig.Server != nil &&
 			config.GSSAPIWithMICConfig.AllowLogin != nil {
 			failureMsg.Methods = append(failureMsg.Methods, "gssapi-with-mic")
+		}
+
+		if authErr == ErrNeedMoreAuth && config.NextAuthMethodsCallback != nil {
+			// if the current callback returns partial success we update the list of methods
+			// that returned partial success and we call NextAuthMethodsCallback.
+			// We set the methods allowed to continue from the NextAuthMethodsCallback
+			// response, an empty list means no supported methods remain and so the
+			// multi-step auth fails
+			s.pastSuccessfulAuths = append(s.pastSuccessfulAuths, userAuthReq.Method)
+			allowedMethods := config.NextAuthMethodsCallback(s)
+			if len(allowedMethods) > 0 {
+				failureMsg.PartialSuccess = true
+				failureMsg.Methods = allowedMethods
+				// a partial success response isn't an auth failure
+				authFailures--
+			} else {
+				return nil, errors.New("ssh: no authentication methods can continue for Multi-Step Authentication")
+			}
+		} else if len(s.pastSuccessfulAuths) > 0 && config.NextAuthMethodsCallback != nil {
+			// If we are doing a multi-step auth and a step fails we must only return the
+			// allowed methods and not the ones already completed as required in RFC 4252.
+			// The application can use "PartialSuccessMethods()" available in ConnMetadata
+			// to know which authentication methods were already completed.
+			failureMsg.Methods = config.NextAuthMethodsCallback(s)
 		}
 
 		if len(failureMsg.Methods) == 0 {

@@ -41,6 +41,10 @@ type ConnMetadata interface {
 
 	// LocalAddr returns the local address for this connection.
 	LocalAddr() net.Addr
+
+	// PastSuccessfulAuths returns the auths that have already succeeded
+	// (used to implement multi-phase auth)
+	PastSuccessfulAuths() []string
 }
 
 // Conn represents an SSH connection for both server and client roles.
@@ -102,10 +106,11 @@ func (c *connection) Close() error {
 type sshConn struct {
 	conn net.Conn
 
-	user          string
-	sessionID     []byte
-	clientVersion []byte
-	serverVersion []byte
+	user                string
+	sessionID           []byte
+	clientVersion       []byte
+	serverVersion       []byte
+	pastSuccessfulAuths []string
 }
 
 func dup(src []byte) []byte {
@@ -140,4 +145,8 @@ func (c *sshConn) ClientVersion() []byte {
 
 func (c *sshConn) ServerVersion() []byte {
 	return dup(c.serverVersion)
+}
+
+func (c *sshConn) PastSuccessfulAuths() []string {
+	return c.pastSuccessfulAuths
 }
