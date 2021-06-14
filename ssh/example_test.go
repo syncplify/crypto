@@ -44,7 +44,7 @@ func ExampleNewServerConn() {
 	// certificate details and handles authentication of ServerConns.
 	config := &ssh.ServerConfig{
 		// Remove to disable password auth.
-		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+		PasswordCallback: func(c ssh.ConnMetadata, pass []byte, opt ...interface{}) (*ssh.Permissions, error) {
 			// Should use constant-time compare (or better, salt+hash) in
 			// a production setting.
 			if c.User() == "testuser" && string(pass) == "tiger" {
@@ -54,7 +54,7 @@ func ExampleNewServerConn() {
 		},
 
 		// Remove to disable public key auth.
-		PublicKeyCallback: func(c ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
+		PublicKeyCallback: func(c ssh.ConnMetadata, pubKey ssh.PublicKey, opt ...interface{}) (*ssh.Permissions, error) {
 			if authorizedKeysMap[string(pubKey.Marshal())] {
 				return &ssh.Permissions{
 					// Record the public key used for authentication.

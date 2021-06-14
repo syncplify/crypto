@@ -332,7 +332,7 @@ func (c *CertChecker) CheckHostKey(addr string, remote net.Addr, key PublicKey) 
 
 // Authenticate checks a user certificate. Authenticate can be used as
 // a value for ServerConfig.PublicKeyCallback.
-func (c *CertChecker) Authenticate(conn ConnMetadata, pubKey PublicKey) (*Permissions, error) {
+func (c *CertChecker) Authenticate(conn ConnMetadata, pubKey PublicKey, opt ...interface{}) (*Permissions, error) {
 	cert, ok := pubKey.(*Certificate)
 	if !ok {
 		if c.UserKeyFallback != nil {

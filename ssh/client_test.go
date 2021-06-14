@@ -125,7 +125,7 @@ func TestBannerCallback(t *testing.T) {
 	defer c2.Close()
 
 	serverConf := &ServerConfig{
-		PasswordCallback: func(conn ConnMetadata, password []byte) (*Permissions, error) {
+		PasswordCallback: func(conn ConnMetadata, password []byte, opt ...interface{}) (*Permissions, error) {
 			return &Permissions{}, nil
 		},
 		BannerCallback: func(conn ConnMetadata) string {
@@ -188,7 +188,7 @@ func TestNewClientConn(t *testing.T) {
 			defer c2.Close()
 
 			serverConf := &ServerConfig{
-				PasswordCallback: func(conn ConnMetadata, password []byte) (*Permissions, error) {
+				PasswordCallback: func(conn ConnMetadata, password []byte, opt ...interface{}) (*Permissions, error) {
 					return &Permissions{}, nil
 				},
 			}

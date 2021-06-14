@@ -374,7 +374,7 @@ func TestAuth(t *testing.T) {
 
 	serverConf := ssh.ServerConfig{}
 	serverConf.AddHostKey(testSigners["rsa"])
-	serverConf.PublicKeyCallback = func(c ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+	serverConf.PublicKeyCallback = func(c ssh.ConnMetadata, key ssh.PublicKey, opt ...interface{}) (*ssh.Permissions, error) {
 		if bytes.Equal(key.Marshal(), testPublicKeys["rsa"].Marshal()) {
 			return nil, nil
 		}

@@ -78,7 +78,7 @@ type ServerConfig struct {
 
 	// PasswordCallback, if non-nil, is called when a user
 	// attempts to authenticate using a password.
-	PasswordCallback func(conn ConnMetadata, password []byte) (*Permissions, error)
+	PasswordCallback func(conn ConnMetadata, password []byte, opt ...interface{}) (*Permissions, error)
 
 	// PublicKeyCallback, if non-nil, is called when a client
 	// offers a public key for authentication. It must return a nil error
@@ -88,7 +88,7 @@ type ServerConfig struct {
 	// offered is in fact used to authenticate. To record any data
 	// depending on the public key, store it inside a
 	// Permissions.Extensions entry.
-	PublicKeyCallback func(conn ConnMetadata, key PublicKey) (*Permissions, error)
+	PublicKeyCallback func(conn ConnMetadata, key PublicKey, opt ...interface{}) (*Permissions, error)
 
 	// KeyboardInteractiveCallback, if non-nil, is called when
 	// keyboard-interactive authentication is selected (RFC
@@ -97,7 +97,7 @@ type ServerConfig struct {
 	// Challenge rounds. To avoid information leaks, the client
 	// should be presented a challenge even if the user is
 	// unknown.
-	KeyboardInteractiveCallback func(conn ConnMetadata, client KeyboardInteractiveChallenge) (*Permissions, error)
+	KeyboardInteractiveCallback func(conn ConnMetadata, client KeyboardInteractiveChallenge, opt ...interface{}) (*Permissions, error)
 
 	// NextAuthMethodsCallback, if not-nil, is called when another
 	// authentication callback returns ErrNeedMoreAuth or if, after an
@@ -106,7 +106,7 @@ type ServerConfig struct {
 	// that can be performed next.
 	// An empty list means no supported methods remain and so the
 	// multi-step authentication will fail
-	NextAuthMethodsCallback func(conn ConnMetadata) []string
+	NextAuthMethodsCallback func(conn ConnMetadata, opt ...interface{}) []string
 
 	// AuthLogCallback, if non-nil, is called to log all authentication
 	// attempts.
@@ -196,7 +196,7 @@ type ServerConn struct {
 //
 // The returned error may be of type *ServerAuthError for
 // authentication errors.
-func NewServerConn(c net.Conn, config *ServerConfig) (*ServerConn, <-chan NewChannel, <-chan *Request, error) {
+func NewServerConn(c net.Conn, config *ServerConfig, opt ...interface{}) (*ServerConn, <-chan NewChannel, <-chan *Request, error) {
 	fullConf := *config
 	fullConf.SetDefaults()
 	if fullConf.MaxAuthTries == 0 {
@@ -212,7 +212,7 @@ func NewServerConn(c net.Conn, config *ServerConfig) (*ServerConn, <-chan NewCha
 	s := &connection{
 		sshConn: sshConn{conn: c},
 	}
-	perms, err := s.serverHandshake(&fullConf)
+	perms, err := s.serverHandshake(&fullConf, opt...)
 	if err != nil {
 		c.Close()
 		return nil, nil, nil, err
@@ -232,7 +232,7 @@ func signAndMarshal(k Signer, rand io.Reader, data []byte) ([]byte, error) {
 }
 
 // handshake performs key exchange and user authentication.
-func (s *connection) serverHandshake(config *ServerConfig) (*Permissions, error) {
+func (s *connection) serverHandshake(config *ServerConfig, opt ...interface{}) (*Permissions, error) {
 	if len(config.hostKeys) == 0 {
 		return nil, errors.New("ssh: server has no host keys")
 	}
@@ -283,7 +283,7 @@ func (s *connection) serverHandshake(config *ServerConfig) (*Permissions, error)
 		return nil, err
 	}
 
-	perms, err := s.serverAuthenticate(config)
+	perms, err := s.serverAuthenticate(config, opt...)
 	if err != nil {
 		return nil, err
 	}
@@ -409,7 +409,7 @@ var ErrNoAuth = errors.New("ssh: no auth passed yet")
 // specific authentication step succeed
 var ErrNeedMoreAuth = errors.New("ssh: at least one more authentication phase needed")
 
-func (s *connection) serverAuthenticate(config *ServerConfig) (*Permissions, error) {
+func (s *connection) serverAuthenticate(config *ServerConfig, opt ...interface{}) (*Permissions, error) {
 	sessionID := s.transport.getSessionID()
 	var cache pubKeyCache
 	var perms *Permissions
@@ -493,7 +493,7 @@ userAuthLoop:
 				return nil, parseError(msgUserAuthRequest)
 			}
 
-			perms, authErr = config.PasswordCallback(s, password)
+			perms, authErr = config.PasswordCallback(s, password, opt...)
 		case "keyboard-interactive":
 			if config.KeyboardInteractiveCallback == nil {
 				authErr = errors.New("ssh: keyboard-interactive auth not configured")
@@ -501,7 +501,7 @@ userAuthLoop:
 			}
 
 			prompter := &sshClientKeyboardInteractive{s}
-			perms, authErr = config.KeyboardInteractiveCallback(s, prompter.Challenge)
+			perms, authErr = config.KeyboardInteractiveCallback(s, prompter.Challenge, opt...)
 		case "publickey":
 			if config.PublicKeyCallback == nil {
 				authErr = errors.New("ssh: publickey auth not configured")
@@ -537,7 +537,7 @@ userAuthLoop:
 			if !ok {
 				candidate.user = s.user
 				candidate.pubKeyData = pubKeyData
-				candidate.perms, candidate.result = config.PublicKeyCallback(s, pubKey)
+				candidate.perms, candidate.result = config.PublicKeyCallback(s, pubKey, opt...)
 				// If PublicKeyCallback returns ErrNeedMoreAuth we need to check source address
 				// and update the returned error if this check fails
 				if (candidate.result == nil || candidate.result == ErrNeedMoreAuth) && candidate.perms != nil && candidate.perms.CriticalOptions != nil && candidate.perms.CriticalOptions[sourceAddressCriticalOption] != "" {
@@ -680,7 +680,7 @@ userAuthLoop:
 			// response, an empty list means no supported methods remain and so the
 			// multi-step auth fails
 			s.pastSuccessfulAuths = append(s.pastSuccessfulAuths, userAuthReq.Method)
-			allowedMethods := config.NextAuthMethodsCallback(s)
+			allowedMethods := config.NextAuthMethodsCallback(s, opt...)
 			if len(allowedMethods) > 0 {
 				failureMsg.PartialSuccess = true
 				failureMsg.Methods = allowedMethods
@@ -694,7 +694,7 @@ userAuthLoop:
 			// allowed methods and not the ones already completed as required in RFC 4252.
 			// The application can use "PartialSuccessMethods()" available in ConnMetadata
 			// to know which authentication methods were already completed.
-			failureMsg.Methods = config.NextAuthMethodsCallback(s)
+			failureMsg.Methods = config.NextAuthMethodsCallback(s, opt...)
 		}
 
 		if len(failureMsg.Methods) == 0 {
