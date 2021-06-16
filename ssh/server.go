@@ -99,6 +99,10 @@ type ServerConfig struct {
 	// unknown.
 	KeyboardInteractiveCallback func(conn ConnMetadata, client KeyboardInteractiveChallenge, opt ...interface{}) (*Permissions, error)
 
+	// SupportedAuthMethodsCallback, if not-nil, is called when a list
+	// of supported authentication methods is needed
+	SupportedAuthMethodsCallback func(conn ConnMetadata, opt ...interface{}) []string
+
 	// NextAuthMethodsCallback, if not-nil, is called when another
 	// authentication callback returns ErrNeedMoreAuth or if, after an
 	// initial partial success, an authentication step fails.
@@ -472,7 +476,6 @@ userAuthLoop:
 		case "none":
 			if config.NoClientAuth {
 				authErr = nil
-
 			}
 
 			// allow initial attempt of 'none' without penalty
@@ -660,21 +663,25 @@ userAuthLoop:
 		authFailures++
 
 		var failureMsg userAuthFailureMsg
-		if config.PasswordCallback != nil {
-			failureMsg.Methods = append(failureMsg.Methods, "password")
-		}
-		if config.PublicKeyCallback != nil {
-			failureMsg.Methods = append(failureMsg.Methods, "publickey")
-		}
-		if config.KeyboardInteractiveCallback != nil {
-			failureMsg.Methods = append(failureMsg.Methods, "keyboard-interactive")
-		}
-		if config.GSSAPIWithMICConfig != nil && config.GSSAPIWithMICConfig.Server != nil &&
-			config.GSSAPIWithMICConfig.AllowLogin != nil {
-			failureMsg.Methods = append(failureMsg.Methods, "gssapi-with-mic")
+		if config.SupportedAuthMethodsCallback != nil {
+			failureMsg.Methods = config.SupportedAuthMethodsCallback(s, opt...)
+		} else {
+			if config.PasswordCallback != nil {
+				failureMsg.Methods = append(failureMsg.Methods, "password")
+			}
+			if config.PublicKeyCallback != nil {
+				failureMsg.Methods = append(failureMsg.Methods, "publickey")
+			}
+			if config.KeyboardInteractiveCallback != nil {
+				failureMsg.Methods = append(failureMsg.Methods, "keyboard-interactive")
+			}
+			if config.GSSAPIWithMICConfig != nil && config.GSSAPIWithMICConfig.Server != nil &&
+				config.GSSAPIWithMICConfig.AllowLogin != nil {
+				failureMsg.Methods = append(failureMsg.Methods, "gssapi-with-mic")
+			}
 		}
 
-		if (authErr == ErrNoAuth || authErr == ErrNeedMoreAuth) && config.NextAuthMethodsCallback != nil {
+		if (authErr == ErrNeedMoreAuth) && config.NextAuthMethodsCallback != nil {
 			// if the current callback returns partial success we update the list of methods
 			// that returned partial success and we call NextAuthMethodsCallback.
 			// We set the methods allowed to continue from the NextAuthMethodsCallback
@@ -686,9 +693,7 @@ userAuthLoop:
 				failureMsg.PartialSuccess = true
 				failureMsg.Methods = allowedMethods
 				// a partial success response isn't an auth failure
-				if authFailures > 0 {
-					authFailures--
-				}
+				authFailures--
 			} else {
 				return nil, errors.New("ssh: no authentication methods can continue for Multi-Step Authentication")
 			}
