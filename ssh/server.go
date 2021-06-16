@@ -471,7 +471,8 @@ userAuthLoop:
 		switch userAuthReq.Method {
 		case "none":
 			if config.NoClientAuth {
-				authErr = ErrNeedMoreAuth //authErr = nil
+				authErr = nil
+
 			}
 
 			// allow initial attempt of 'none' without penalty
@@ -673,7 +674,7 @@ userAuthLoop:
 			failureMsg.Methods = append(failureMsg.Methods, "gssapi-with-mic")
 		}
 
-		if authErr == ErrNeedMoreAuth && config.NextAuthMethodsCallback != nil {
+		if (authErr == ErrNoAuth || authErr == ErrNeedMoreAuth) && config.NextAuthMethodsCallback != nil {
 			// if the current callback returns partial success we update the list of methods
 			// that returned partial success and we call NextAuthMethodsCallback.
 			// We set the methods allowed to continue from the NextAuthMethodsCallback
@@ -685,7 +686,9 @@ userAuthLoop:
 				failureMsg.PartialSuccess = true
 				failureMsg.Methods = allowedMethods
 				// a partial success response isn't an auth failure
-				authFailures--
+				if authFailures > 0 {
+					authFailures--
+				}
 			} else {
 				return nil, errors.New("ssh: no authentication methods can continue for Multi-Step Authentication")
 			}
