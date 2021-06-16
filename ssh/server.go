@@ -471,7 +471,7 @@ userAuthLoop:
 		switch userAuthReq.Method {
 		case "none":
 			if config.NoClientAuth {
-				authErr = nil
+				authErr = ErrNeedMoreAuth //authErr = nil
 			}
 
 			// allow initial attempt of 'none' without penalty
