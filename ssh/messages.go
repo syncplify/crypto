@@ -44,6 +44,14 @@ type disconnectMsg struct {
 }
 
 func (d *disconnectMsg) Error() string {
+	if d.Message == "" {
+		switch d.Reason {
+		case 1:
+			d.Message = "invalid identification string of SSH-protocol"
+		case 11:
+			d.Message = "client sent a packet of the wrong size"
+		}
+	}
 	return fmt.Sprintf("ssh: disconnect, reason %d: %s", d.Reason, d.Message)
 }
 
